@@ -9,10 +9,10 @@ import kdtree
 class Node:
     parent = None
     cost = 0
+
     def __init__(self, x, y, parent):
         self.coords = (x, y)
         self.parent = parent
-        self.cost = 0
 
     def __len__(self):
         return len(self.coords)
@@ -33,6 +33,7 @@ class Node:
 class RRT:
     nodes_start_tree = kdtree.create(dimensions=2)
     nodes_goal_tree = kdtree.create(dimensions=2)
+    samples = []
 
     def __init__(self, path_to_map, use_rrt, coords_start, coords_end, step_size):
         self.image = Image.open(path_to_map)
@@ -68,7 +69,7 @@ class RRT:
         while not collision_free:
             point_x = random.random() * x_max
             point_y = random.random() * y_max
-            if self.map[int(point_x),int(point_y)] == 0:
+            if self.map[int(point_y),int(point_x)] > 100:
                 collision_free = True
                 return (point_x, point_y)
             # else:
@@ -94,10 +95,12 @@ class RRT:
             closer_node.cost = cost_new
 
             nodes.add(closer_node)
+            print("Added node " + str(closer_node.coords))
             self.node_count += 1
-            self.rewire(nodes, closer_node)
-            if not nodes.is_balanced and self.node_count % 20 == 0:
-                nodes.rebalance()
+            # if not self.use_rrt:
+            # self.rewire(nodes, closer_node)
+            # if not nodes.is_balanced and self.node_count % 20 == 0:
+            #     nodes.rebalance()
         return closer_node
 
     def do_connect(self, nodes, origin_node, target_node):
@@ -117,11 +120,13 @@ class RRT:
                 closer_node.cost = cost_new
 
                 nodes.add(closer_node)
-                self.node_count += 1
+                print("Added node " + str(closer_node.coords))
 
+                self.node_count += 1
+                self.rewire(nodes, closer_node)
                 current_node = closer_node
-                if not nodes.is_balanced and self.node_count % 20 == 0:
-                    nodes.rebalance()
+                # if not nodes.is_balanced and self.node_count % 20 == 0:
+                #     nodes.rebalance()
             else:
                 # print "Hit something, unfortunately"
                 return False, None, None
@@ -137,25 +142,16 @@ class RRT:
         return NotImplemented
 
     def get_nearest_node(self, nodes, node_origin):
-        return nodes.search_nn(node_origin)[0].data
-        # distance_min = 10000
-        # nearest = None
-        # for node in nodes:
-        #     distance = self.dist_euclidean((node[0], node[1]), point)
-        #     if distance < distance_min:
-        #         nearest = node
-        #         distance_min = distance
-        # return nearest
+        time_start = time.time()
+        nearest = nodes.search_nn(node_origin)[0].data
+        print("Nearest node time: " + str(time.time() - time_start))
+        return nearest
 
     def get_near_nodes(self, nodes, point):
-        return nodes.search_knn(point, 10)
-
-        # distance = 2
-        # near_nodes = []
-        # for node in nodes:
-        #     if self.dist_euclidean(point, (node[0], node[1])) < distance:
-        #         near_nodes.append(node)
-        # return near_nodes
+        time_start = time.time()
+        nearest = nodes.search_knn(point, 20)
+        print("Near nodes time: " + str(time.time() - time_start))
+        return nearest
 
     def check_if_obstacle_free(self, point_a, point_b):
         x_min = point_a[0]
@@ -194,10 +190,7 @@ class RRT:
                 and node.cost + self.dist_euclidean(node.coords, new_node.coords) \
                     < new_node.cost + self.dist_euclidean(nn.coords, new_node.coords):
                 nn = node
-        # new_node.cost = nn.cost + self.dist_euclidean((nn.x, nn.y), (new_node.x, new_node.y))
         return nn, nn.cost + self.step_size
-        # new_node.set_parent(nn)
-        # new_node.cost = new_node.parent.cost + self.step_size
 
     def draw_tree(self):
         scale_factor = 20
@@ -235,9 +228,11 @@ class RRT:
             draw.line([(self.path_total[i][0] * scale_factor, self.path_total[i][1] * scale_factor),
                        (self.path_total[i+1][0] * scale_factor, self.path_total[i+1][1] * scale_factor)], (255, 0, 0))
 
+        for point in self.samples:
+            draw.ellipse([(point[0]* scale_factor - 1, point[1] * scale_factor - 1),
+                          (point[0] * scale_factor + 1, point[1] * scale_factor + 1)], fill=(255, 0, 0),
+                         outline=(255, 0, 0))
 
-        # draw.line((0, 0) + image_big.size, fill=128)
-        # draw.line((0, image_big.size[1], image_big.size[0], 0), fill=128)
         del draw
         image_big.save("test.png")
 
@@ -257,6 +252,7 @@ class RRT:
 
         while self.node_count < self.num_nodes:
             point_random = self.sample()
+            self.samples.append(point_random)
 
             nearest = self.get_nearest_node(self.nodes_start_tree, point_random)
             new_node = self.do_extend(self.nodes_start_tree, nearest, point_random)
@@ -276,6 +272,8 @@ class RRT:
                     self.path_total = path_total
                     self.success = True
                     break
+            else:
+                print("Extend failed")
         elapsed = time.time() - start
         return elapsed, self.cost_total
 
@@ -292,10 +290,16 @@ class RRT:
 if __name__ == "__main__":
     random.seed()
 
-    solver = RRT("U_turn.gif", False, (24.5, 24.5), (1.5, 1.5), 1.0)
-    time_elapsed, cost = solver.do_RRT(1000)
-    print("Time elapsed: " + str(time_elapsed) + " s\nTotal Cost: " + str(cost))
-    solver.draw_tree()
+    solver = RRT("U_turn.gif", False, (1.5, 1.5), (98.5, 98.5), 1.0)
+    try:
+        time_elapsed, cost = solver.do_RRT(5000)
+        solver.draw_tree()
+        print("Time elapsed: " + str(time_elapsed) + " s\nTotal Cost: " + str(cost))
+    except KeyboardInterrupt:
+        solver.draw_tree()
+
+    # print("Time elapsed: " + str(time_elapsed) + " s\nTotal Cost: " + str(cost))
+    # solver.draw_tree()
 
     # print("Time elapsed: " + str(elapsed) + " s")
     # print(solver.find_supercover_squares((0.0, 0.5), (1, 1)))
