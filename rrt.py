@@ -22,7 +22,7 @@ class RRT:
     nodes_start_tree = []
     nodes_goal_tree = []
 
-    def __init__(self, path_to_map, coords_start, coords_end, step_size):
+    def __init__(self, path_to_map, use_rrt, coords_start, coords_end, step_size):
         self.image = Image.open(path_to_map)
         self.map = scipy.ndimage.imread(path_to_map, flatten=True)
         self.root_start = Node(coords_start[0], coords_start[1])
@@ -37,6 +37,9 @@ class RRT:
 
         self.cost_total = 0
         self.path_total = []
+        self.success = False
+
+        self.use_rrt = use_rrt
 
     def dist_euclidean(self, point_a, point_b):
         return math.sqrt(math.pow(point_b[0] - point_a[0], 2) + math.pow(point_b[1] - point_a[1], 2))
@@ -71,7 +74,7 @@ class RRT:
             new_position_x = current_node.x + self.step_size*(target_position[0] - current_node.x)/distance_to_target
             new_position_y = current_node.y + self.step_size*(target_position[1] - current_node.y)/distance_to_target
         closer_node = None
-        if self.check_if_obstacle_free((new_position_x, new_position_y)) and self.node_count < self.num_nodes:
+        if self.check_if_obstacle_free((current_node.x, current_node.y), (new_position_x, new_position_y)) and self.node_count < self.num_nodes:
             closer_node = Node(new_position_x, new_position_y)
 
             # print("Closer node: " + str((closer_node.x, closer_node.y)))
@@ -81,7 +84,7 @@ class RRT:
 
             nodes.append(closer_node)
             self.node_count += 1
-            # self.rewire(nodes, closer_node)
+            self.rewire(nodes, closer_node)
         return closer_node
 
     def do_connect(self, nodes, origin_node, target_node):
@@ -93,7 +96,7 @@ class RRT:
             new_position_x = current_node.x + self.step_size*(target_node.x - origin_node.x)/distance_from_origin
             new_position_y = current_node.y + self.step_size*(target_node.y - origin_node.y)/distance_from_origin
 
-            if self.check_if_obstacle_free((new_position_x, new_position_y)):
+            if self.check_if_obstacle_free((current_node.x, current_node.y), (new_position_x, new_position_y)):
                 closer_node = Node(new_position_x, new_position_y)
                 self.choose_parent(nodes, current_node, closer_node)
                 nodes.append(closer_node)
@@ -127,7 +130,17 @@ class RRT:
     def get_near_nodes(self, point, count):
         return NotImplemented
 
-    def check_if_obstacle_free(self, point_b):
+    def check_if_obstacle_free(self, point_a, point_b):
+        # x_min = point_a[0]
+        # x_max = point_b[0]
+
+        # slope = (point_b[1] - point_a[1])/(x_max-x_min)
+        # print(slope)
+
+        # x_range = range(int(math.floor(x_min)), int(math.floor(x_max)))
+        # print(x_range)
+        # print(x_min, x_max)
+
         if self.map[int(point_b[1]), int(point_b[0])] > 100:
             print "Free"
             return True
@@ -268,6 +281,8 @@ class RRT:
         self.node_count = 0
         self.num_nodes = num_nodes
 
+        start = time.time()
+
         while self.node_count < self.num_nodes:
             point_random = self.sample()
 
@@ -287,8 +302,10 @@ class RRT:
                     path_total.extend(path_goal_tree)
                     self.cost_total = joint_node_start.cost + joint_node_goal.cost
                     self.path_total = path_total
+                    self.success = True
                     break
-
+        elapsed = time.time() - start
+        return elapsed, self.cost_total
 
     # def do_RRT(self):
     #     V = {x_init}
@@ -302,8 +319,12 @@ class RRT:
 
 if __name__ == "__main__":
     random.seed()
-    solver = RRT("U_turn.gif", (24.5, 24.5), (1.5, 1.5), 1.0)
-    solver.do_RRT(800)
-    # print(solver.find_supercover_squares((0.0, 0.5), (1, 1)))
+
+    solver = RRT("U_turn.gif", False, (24.5, 24.5), (1.5, 1.5), 1.0)
+    time_elapsed, cost = solver.do_RRT(1000)
+    print("Time elapsed: " + str(time_elapsed) + " s\nTotal Cost: " + str(cost))
     solver.draw_tree()
-    print("Total Cost: " + str(solver.cost_total))
+
+    # print("Time elapsed: " + str(elapsed) + " s")
+    # print(solver.find_supercover_squares((0.0, 0.5), (1, 1)))
+    # print("Total Cost: " + str(solver.cost_total))
