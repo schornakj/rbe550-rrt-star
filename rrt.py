@@ -127,8 +127,13 @@ class RRT:
                 distance_min = distance
         return nearest
 
-    def get_near_nodes(self, point, count):
-        return NotImplemented
+    def get_near_nodes(self, nodes, point):
+        distance = 3
+        near_nodes = []
+        for node in nodes:
+            if self.dist_euclidean(point, (node.x, node.y)) < distance:
+                near_nodes.append(node)
+        return near_nodes
 
     def check_if_obstacle_free(self, point_a, point_b):
         # x_min = point_a[0]
