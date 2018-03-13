@@ -136,17 +136,25 @@ class RRT:
         return near_nodes
 
     def check_if_obstacle_free(self, point_a, point_b):
-        # x_min = point_a[0]
-        # x_max = point_b[0]
-
+        x_min = point_a[0]
+        x_max = point_b[0]
+        x_test = np.linspace(x_min, x_max, 5)
+        y_test = np.array(np.interp(x_test, [point_a[0], point_b[0]], [point_a[1], point_b[1]]), dtype=np.uint8)
+        x_test = np.array(x_test, dtype=np.uint8)
+        # print(x_min, x_max)
+        # print(points)
+        # print x_test
+        # print y_test
+        # print(self.map[x_test, y_test])
         # slope = (point_b[1] - point_a[1])/(x_max-x_min)
         # print(slope)
 
         # x_range = range(int(math.floor(x_min)), int(math.floor(x_max)))
         # print(x_range)
         # print(x_min, x_max)
-
-        if self.map[int(point_b[1]), int(point_b[0])] > 100:
+        cells = self.map[y_test, x_test]
+        # print cells
+        if np.all(cells > 100):
             print "Free"
             return True
         else:
