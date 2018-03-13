@@ -4,18 +4,31 @@ from PIL import Image, ImageDraw, ImageColor
 import random
 import math
 import time
+import kdtree
 
 class Node:
     parent = None
     cost = 0
 
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-
-    def set_parent(self, parent):
+    def __init__(self, x, y, parent):
+        self.coords = (x, y)
         self.parent = parent
-        self.cost = math.sqrt(math.pow(self.x - parent.x, 2) + math.pow(self.y - parent.y, 2))
+        self.cost = 0
+
+    def __len__(self):
+        return len(self.coords)
+
+    def __getitem__(self, i):
+        return self.coords[i]
+
+    def __repr__(self):
+        return 'Item({}, {}, {}, {})'.format(self.coords[0], self.coords[1], self.parent, self.cost)
+    #
+    # def set_parent(self, parent):
+    #     self.parent = parent
+    #
+    # def get_parent(self):
+    #     return self.parent
 
 
 class RRT:
@@ -25,10 +38,10 @@ class RRT:
     def __init__(self, path_to_map, use_rrt, coords_start, coords_end, step_size):
         self.image = Image.open(path_to_map)
         self.map = scipy.ndimage.imread(path_to_map, flatten=True)
-        self.root_start = Node(coords_start[0], coords_start[1])
+        self.root_start = Node(coords_start[0], coords_start[1], None)
         self.nodes_start_tree.append(self.root_start)
 
-        self.root_goal = Node(coords_end[0], coords_end[1])
+        self.root_goal = Node(coords_end[0], coords_end[1], None)
         self.nodes_goal_tree.append(self.root_goal)
 
         self.radius = 50
@@ -50,7 +63,7 @@ class RRT:
 
         goal_roll = random.random()
         if goal_roll <= 0.1:
-            return (self.root_goal.x, self.root_goal.y)
+            return (self.root_goal[0], self.root_goal[1])
 
         collision_free = False
         while not collision_free:
@@ -65,20 +78,22 @@ class RRT:
         # return (random.random()*x_max, random.random()*y_max)
 
     def do_extend(self, nodes, current_node, target_position):
-        distance_to_target = self.dist_euclidean((current_node.x, current_node.y), (target_position[0], target_position[1]))
+        distance_to_target = self.dist_euclidean((current_node[0], current_node[1]), (target_position[0], target_position[1]))
 
         if distance_to_target <= self.step_size:
             new_position_x = target_position[0]
             new_position_y = target_position[1]
         else:
-            new_position_x = current_node.x + self.step_size*(target_position[0] - current_node.x)/distance_to_target
-            new_position_y = current_node.y + self.step_size*(target_position[1] - current_node.y)/distance_to_target
+            new_position_x = current_node[0] + self.step_size*(target_position[0] - current_node[0])/distance_to_target
+            new_position_y = current_node[1] + self.step_size*(target_position[1] - current_node[1])/distance_to_target
         closer_node = None
-        if self.check_if_obstacle_free((current_node.x, current_node.y), (new_position_x, new_position_y)) and self.node_count < self.num_nodes:
-            closer_node = Node(new_position_x, new_position_y)
+        if self.check_if_obstacle_free(current_node.coords, (new_position_x, new_position_y)) and self.node_count < self.num_nodes:
+            closer_node = Node(new_position_x, new_position_y, None)
 
             # print("Closer node: " + str((closer_node.x, closer_node.y)))
-            self.choose_parent(nodes, current_node, closer_node)
+            parent_new, cost_new = self.choose_parent(nodes, current_node, closer_node)
+            closer_node.parent = parent_new
+            closer_node.cost = cost_new
             # closer_node.set_parent(current_node)
             # closer_node.cost = closer_node.parent.cost + self.dist_euclidean((closer_node.x, closer_node.y), (current_node.x, current_node.y))
 
@@ -89,16 +104,20 @@ class RRT:
 
     def do_connect(self, nodes, origin_node, target_node):
         current_node = origin_node
-        distance_to_target = self.dist_euclidean((current_node.x, current_node.y), (target_node.x, target_node.y))
+        distance_to_target = self.dist_euclidean((current_node[0], current_node[1]), (target_node[0], target_node[1]))
         distance_from_origin = distance_to_target
         while distance_to_target > self.step_size and self.node_count < self.num_nodes:
             print distance_to_target
-            new_position_x = current_node.x + self.step_size*(target_node.x - origin_node.x)/distance_from_origin
-            new_position_y = current_node.y + self.step_size*(target_node.y - origin_node.y)/distance_from_origin
+            new_position_x = current_node[0] + self.step_size*(target_node[0] - origin_node[1])/distance_from_origin
+            new_position_y = current_node[1] + self.step_size*(target_node[1] - origin_node[1])/distance_from_origin
 
-            if self.check_if_obstacle_free((current_node.x, current_node.y), (new_position_x, new_position_y)):
-                closer_node = Node(new_position_x, new_position_y)
-                self.choose_parent(nodes, current_node, closer_node)
+            if self.check_if_obstacle_free((current_node[0], current_node[1]), (new_position_x, new_position_y)):
+                closer_node = Node(new_position_x, new_position_y, None)
+
+                parent_new, cost_new = self.choose_parent(nodes, current_node, closer_node)
+                closer_node.parent = parent_new
+                closer_node.cost = cost_new
+
                 nodes.append(closer_node)
                 self.node_count += 1
 
@@ -106,7 +125,7 @@ class RRT:
             else:
                 print "Hit something, unfortunately"
                 return False, None, None
-            distance_to_target = self.dist_euclidean((current_node.x, current_node.y), (target_node.x, target_node.y))
+            distance_to_target = self.dist_euclidean((current_node[0], current_node[1]), (target_node[0], target_node[1]))
         if distance_to_target <= self.step_size:
             print("Within range of target")
             return True, current_node, target_node
@@ -121,17 +140,17 @@ class RRT:
         distance_min = 10000
         nearest = None
         for node in nodes:
-            distance = self.dist_euclidean((node.x, node.y), point)
+            distance = self.dist_euclidean((node[0], node[1]), point)
             if distance < distance_min:
                 nearest = node
                 distance_min = distance
         return nearest
 
     def get_near_nodes(self, nodes, point):
-        distance = 3
+        distance = 2
         near_nodes = []
         for node in nodes:
-            if self.dist_euclidean(point, (node.x, node.y)) < distance:
+            if self.dist_euclidean(point, (node[0], node[1])) < distance:
                 near_nodes.append(node)
         return near_nodes
 
@@ -141,93 +160,23 @@ class RRT:
         x_test = np.linspace(x_min, x_max, 5)
         y_test = np.array(np.interp(x_test, [point_a[0], point_b[0]], [point_a[1], point_b[1]]), dtype=np.uint8)
         x_test = np.array(x_test, dtype=np.uint8)
-        # print(x_min, x_max)
-        # print(points)
-        # print x_test
-        # print y_test
-        # print(self.map[x_test, y_test])
-        # slope = (point_b[1] - point_a[1])/(x_max-x_min)
-        # print(slope)
 
-        # x_range = range(int(math.floor(x_min)), int(math.floor(x_max)))
-        # print(x_range)
-        # print(x_min, x_max)
         cells = self.map[y_test, x_test]
-        # print cells
         if np.all(cells > 100):
-            print "Free"
+            # print "Free"
             return True
         else:
-            print "Obstacle"
+            # print "Obstacle"
             return False
 
-    def find_supercover_squares(self, point_a, point_b):
-        points_traversed = []
-        points_traversed.append((math.floor(point_a[0]), math.floor(point_a[1])))
-
-        dx = math.floor(point_b[0] - point_a[0])
-        dy = math.floor(point_b[1] - point_a[1])
-        double_dx = 2*dx
-        double_dy = 2*dy
-
-        x_step = 1
-        y_step = 1
-
-        x = math.floor(point_a[0])
-        y = math.floor(point_a[1])
-
-        if dx < 0:
-            x_step = -1
-        if dy < 0:
-            y_step = -1
-
-        if double_dx >= double_dy:
-            errorprev = dx
-            error = dx
-            for i in np.arange(0, dx):
-                x += x_step
-                error += double_dy
-                if error > double_dx:
-                    y += y_step
-                    error -= double_dx
-                    if error + errorprev < double_dx:
-                        points_traversed.append((x, y - y_step))
-                    elif error + errorprev > double_dx:
-                        points_traversed.append((x-x_step, y))
-                    else:
-                        points_traversed.append((x, y - y_step))
-                        points_traversed.append((x-x_step, y))
-                points_traversed.append((x, y))
-                errorprev = error
-        else:
-            errorprev = dy
-            error = dy
-            for i in np.arange(0, dy):
-                y += y_step
-                error += double_dx
-                if error > double_dy:
-                    x += x_step
-                    error -= double_dy
-                    if error + errorprev < double_dy:
-                        points_traversed.append((x - x_step, y))
-                    elif error + errorprev > double_dy:
-                        points_traversed.append((x, y - y_step))
-                    else:
-                        points_traversed.append((x, y - y_step))
-                        points_traversed.append((x - x_step, y))
-                points_traversed.append((x, y))
-                errorprev = error
-        # assert y is point_b[1] and x is point_b[0]
-        return points_traversed
-
     def rewire(self, nodes, new_node):
-        near_nodes = self.get_near_nodes(nodes, (new_node.x, new_node.y))
+        near_nodes = self.get_near_nodes(nodes, (new_node[0], new_node[1]))
         for node in near_nodes:
-            if self.check_if_obstacle_free((node.x, node.y), (new_node.x, new_node.y))\
+            if self.check_if_obstacle_free((node[0], node[1]), (new_node[0], new_node[1]))\
                     and new_node.parent is not node \
-                    and new_node.cost + self.dist_euclidean((node.x, node.y), (new_node.x, new_node.y)) < node.cost:
+                    and new_node.cost + self.dist_euclidean((node[0], node[1]), (new_node[0], new_node[1])) < node.cost:
                 node.parent = new_node
-                node.cost = new_node.cost + self.dist_euclidean((node.x, node.y), (new_node.x, new_node.y))
+                node.cost = new_node.cost + self.dist_euclidean(node.coords, (new_node[0], new_node[1]))
 
     def choose_parent(self, nodes, nearest_node, new_node):
         nn = nearest_node
@@ -235,13 +184,14 @@ class RRT:
             # if this node is within the radius of the new nodw
             # and if the node cost plus distance to the new node is less than for the previous nearest node
             # make it the nearest node
-            if self.dist_euclidean((node.x, node.y), (new_node.x, new_node.y)) < self.radius \
-                and node.cost + self.dist_euclidean((node.x, node.y), (new_node.x, new_node.y)) \
-                    < new_node.cost + self.dist_euclidean((nn.x, nn.y), (new_node.x, new_node.y)):
+            if self.dist_euclidean(node.coords, new_node.coords) < self.radius \
+                and node.cost + self.dist_euclidean(node.coords, new_node.coords) \
+                    < new_node.cost + self.dist_euclidean(nn.coords, new_node.coords):
                 nn = node
         # new_node.cost = nn.cost + self.dist_euclidean((nn.x, nn.y), (new_node.x, new_node.y))
-        new_node.set_parent(nn)
-        new_node.cost = new_node.parent.cost + self.step_size
+        return nn, nn.cost + self.step_size
+        # new_node.set_parent(nn)
+        # new_node.cost = new_node.parent.cost + self.step_size
 
     def draw_tree(self):
         scale_factor = 20
@@ -257,21 +207,21 @@ class RRT:
 
         for node in self.nodes_start_tree:
             if node.parent is not None:
-                draw.line([(node.x*scale_factor, node.y*scale_factor), (node.parent.x*scale_factor, node.parent.y*scale_factor)], (255,0,255))
-                draw.ellipse([(node.x * scale_factor - 2, node.y * scale_factor - 2),
-                              (node.x * scale_factor + 2, node.y * scale_factor + 2)], fill=(255,0,255), outline=(255,0,255))
+                draw.line([(node[0] * scale_factor, node[1] * scale_factor), (node.parent[0] * scale_factor, node.parent[1] * scale_factor)], (255,0,255))
+                draw.ellipse([(node[0] * scale_factor - 2, node[1] * scale_factor - 2),
+                              (node[0] * scale_factor + 2, node[1] * scale_factor + 2)], fill=(255,0,255), outline=(255,0,255))
             else:
-                draw.ellipse([(node.x * scale_factor - 2, node.y * scale_factor - 2),
-                              (node.x * scale_factor + 2, node.y * scale_factor + 2)], fill=(0,255,0), outline=(0,255,0))
+                draw.ellipse([(node[0] * scale_factor - 2, node[1] * scale_factor - 2),
+                              (node[0] * scale_factor + 2, node[1] * scale_factor + 2)], fill=(0,255,0), outline=(0,255,0))
 
         for node in self.nodes_goal_tree:
             if node.parent is not None:
-                draw.line([(node.x*scale_factor, node.y*scale_factor), (node.parent.x*scale_factor, node.parent.y*scale_factor)], (0,0,255))
-                draw.ellipse([(node.x * scale_factor - 2, node.y * scale_factor - 2),
-                              (node.x * scale_factor + 2, node.y * scale_factor + 2)], fill=(0,0,255), outline=(0,0,255))
+                draw.line([(node[0] * scale_factor, node[1] * scale_factor), (node.parent[0] * scale_factor, node.parent[1] * scale_factor)], (0,0,255))
+                draw.ellipse([(node[0] * scale_factor - 2, node[1] * scale_factor - 2),
+                              (node[0] * scale_factor + 2, node[1] * scale_factor + 2)], fill=(0,0,255), outline=(0,0,255))
             else:
-                draw.ellipse([(node.x * scale_factor - 2, node.y * scale_factor - 2),
-                              (node.x * scale_factor + 2, node.y * scale_factor + 2)], fill=(0,255,255), outline=(0,255,255))
+                draw.ellipse([(node[0] * scale_factor - 2, node[1] * scale_factor - 2),
+                              (node[0] * scale_factor + 2, node[1] * scale_factor + 2)], fill=(0,255,255), outline=(0,255,255))
 
         for i in range(0, len(self.path_total)-1):
             draw.line([(self.path_total[i][0] * scale_factor, self.path_total[i][1] * scale_factor),
@@ -284,10 +234,10 @@ class RRT:
         image_big.save("test.png")
 
     def trace_path(self, node):
-        path = [(node.x, node.y)]
+        path = [node.coords]
         next_node = node.parent
         while next_node is not None:
-            path.append((next_node.x, next_node.y))
+            path.append(next_node)
             next_node = next_node.parent
         return path
 
@@ -305,7 +255,7 @@ class RRT:
 
             # point_random = self.sample()
             if new_node is not None:
-                nearest = self.get_nearest_node(self.nodes_goal_tree, (new_node.x, new_node.y))
+                nearest = self.get_nearest_node(self.nodes_goal_tree, new_node.coords)
                 trees_linked, joint_node_goal, joint_node_start = self.do_connect(self.nodes_goal_tree, nearest, new_node)
                 if trees_linked:
                     path_start_tree = self.trace_path(joint_node_start)
