@@ -208,11 +208,12 @@ class RRT:
         return points_traversed
 
     def rewire(self, nodes, new_node):
-        for node in nodes:
-            if node is not new_node.parent \
-                and self.dist_euclidean((node.x, node.y), (new_node.x, new_node.y)) < self.radius \
-                and new_node.cost + self.dist_euclidean((node.x, node.y), (new_node.x, new_node.y)) < node.cost:
-                new_node.parent = node
+        near_nodes = self.get_near_nodes(nodes, (new_node.x, new_node.y))
+        for node in near_nodes:
+            if self.check_if_obstacle_free((node.x, node.y), (new_node.x, new_node.y))\
+                    and new_node.parent is not node \
+                    and new_node.cost + self.dist_euclidean((node.x, node.y), (new_node.x, new_node.y)) < node.cost:
+                node.parent = new_node
                 node.cost = new_node.cost + self.dist_euclidean((node.x, node.y), (new_node.x, new_node.y))
 
     def choose_parent(self, nodes, nearest_node, new_node):
